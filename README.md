@@ -4,6 +4,9 @@ A visual temple planner for Path of Exile 2's Vaal Temple mechanic. Build optima
 
 **[Live App](https://akashdeepo.github.io/Temple-Optimizer/)**
 
+> **This is a fork** of [akashdeepo/Temple-Optimizer](https://github.com/akashdeepo/Temple-Optimizer)
+> that adds authoritative room tiers. See [Manual tiers](#manual-tiers) below.
+
 ![Temple Optimizer Screenshot](https://img.shields.io/badge/PoE2-Temple%20Planner-af6025?style=for-the-badge)
 
 ## Features
@@ -59,3 +62,26 @@ Garrison → Spy Master → Garrison → Armory → repeat
 ## License
 
 MIT License - Feel free to fork and improve!
+
+## Manual tiers
+
+Upstream derives every room's tier from its neighbours: `recalculateTiers()` resets each
+placed room to tier 1 and then infers 2 or 3 from how many connectable rooms are adjacent.
+In game, a room's tier instead comes from how many copies of its card have been merged into
+it — a property of the room's history, not of its surroundings. The two don't agree, and
+because `recalculateStats()` indexes each room's `effects` array by `tier - 1`, a wrong tier
+feeds straight into the Temple Modifiers panel.
+
+Upstream also writes `tier` into the `?l=` share payload but overwrites it on import, so the
+field is dead data and no share link can carry a real board.
+
+This fork adds:
+
+- **`?t=1` share flag** — when present, the tiers in the payload are taken as authoritative
+  and the adjacency heuristic is skipped. Links without the flag behave exactly as before.
+- **Tiers: Auto / Manual toggle** — switches the same behaviour from the UI. `Share URL`
+  appends `&t=1` while manual mode is on.
+- **Alt+click a room** — cycles its tier 1 → 2 → 3 → 1, and switches the board to manual
+  tiers so the change survives. (Shift+click still removes a room.)
+
+Auto mode remains the default, so existing links and the planner workflow are unchanged.

@@ -269,7 +269,11 @@ const state = {
     selectedRoom: null,
     selectedCards: [null, null, null, null, null, null],
     hasCommanderInChain: false,
-    spymasterCount: 0
+    spymasterCount: 0,
+    // When true, room tiers are taken as authoritative instead of being
+    // re-derived from adjacency. Set by ?t=1 in a share URL, or by the
+    // "Manual Tiers" toggle. See recalculateTiers().
+    trustTiers: false
 };
 
 // ============================================
@@ -457,6 +461,19 @@ function handleCellClick(row, col, event) {
     // Destabilization mode - simulate removal
     if (destabMode && cellData.type) {
         simulateDestab(row, col);
+        return;
+    }
+
+    // Alt/Ctrl+click cycles a placed room's tier 1 -> 2 -> 3 -> 1.
+    // Doing so switches the board into manual-tier mode, since the adjacency
+    // heuristic would otherwise undo the change on the next recalculation.
+    if ((event.altKey || event.ctrlKey || event.metaKey) && cellData.type) {
+        state.trustTiers = true;
+        updateTierModeButton();
+        cellData.tier = (cellData.tier || 1) % 3 + 1;
+        updateCellDisplay(row, col);
+        recalculateStats();
+        checkWarnings();
         return;
     }
 
@@ -923,6 +940,12 @@ function highlightValidPlacements() {
 // TIER CALCULATION
 // ============================================
 function recalculateTiers() {
+    // In-game, a room's tier comes from how many copies of its card have been
+    // merged into it - it is a property of the room's history, not of its
+    // neighbours. When we have the real tiers (from a ?t=1 share link or from
+    // manual entry) the adjacency heuristic below would destroy them, so skip it.
+    if (state.trustTiers) return;
+
     for (let row = 0; row < 9; row++) {
         for (let col = 0; col < 9; col++) {
             if (state.grid[row][col].type && state.grid[row][col].type !== 'entrance') {
@@ -1692,7 +1715,10 @@ function loadLayout() {
 
 function exportURL() {
     const encoded = btoa(JSON.stringify(state.grid));
-    const url = window.location.href.split('?')[0] + '?l=' + encoded;
+    // ?t=1 tells the importer the tiers in the payload are real and must not
+    // be recalculated from adjacency.
+    const suffix = state.trustTiers ? '&t=1' : '';
+    const url = window.location.href.split('?')[0] + '?l=' + encoded + suffix;
     navigator.clipboard.writeText(url).then(() => showWarning('URL copied!')).catch(() => prompt('Copy:', url));
 }
 
@@ -1702,6 +1728,10 @@ function loadFromURL() {
     if (layout) {
         try {
             state.grid = JSON.parse(atob(layout));
+            // Honour the tiers encoded in the payload when the link says they
+            // are real. Without this, recalculateTiers() below overwrites them.
+            state.trustTiers = params.get('t') === '1';
+            updateTierModeButton();
             for (let r = 0; r < 9; r++) {
                 for (let c = 0; c < 9; c++) {
                     updateCellDisplay(r, c);
@@ -1716,6 +1746,24 @@ function loadFromURL() {
             console.error('Failed to load from URL:', e);
         }
     }
+}
+
+function updateTierModeButton() {
+    const btn = document.getElementById('tier-mode-btn');
+    if (!btn) return;
+    btn.textContent = state.trustTiers ? 'Tiers: Manual' : 'Tiers: Auto';
+    btn.classList.toggle('active', state.trustTiers);
+}
+
+function toggleTierMode() {
+    state.trustTiers = !state.trustTiers;
+    updateTierModeButton();
+    if (!state.trustTiers) recalculateTiers();
+    recalculateStats();
+    checkWarnings();
+    showWarning(state.trustTiers
+        ? 'Manual tiers on - Alt+click a room to cycle its tier. Share URL will preserve them.'
+        : 'Auto tiers on - tiers are re-derived from adjacency.');
 }
 
 function resetGrid() {
@@ -2134,6 +2182,8 @@ function init() {
     document.getElementById('sample-btn').addEventListener('click', generateSampleTemple);
     document.getElementById('destab-btn').addEventListener('click', toggleDestabMode);
     document.getElementById('export-img-btn').addEventListener('click', exportAsImage);
+    document.getElementById('tier-mode-btn').addEventListener('click', toggleTierMode);
+    updateTierModeButton();
 }
 
 // Start the app when DOM is ready
